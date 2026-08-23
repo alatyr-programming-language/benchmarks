@@ -1,0 +1,17 @@
+# `run.sh` builds into a `mktemp -d` and removes it on exit, so a clean run leaves nothing behind.
+# These patterns are a guard for the other way of working — compiling a single case by hand in its
+# own directory to look at the output — and for per-language caches that appear if a toolchain is
+# invoked directly.
+*.o
+*.out
+*.wasm
+a.out
+target/
+zig-out/
+zig-cache/
+.zig-cache/
+node_modules/
+__pycache__/
+# OS / editor noise
+.DS_Store
+Thumbs.db

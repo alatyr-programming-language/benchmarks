@@ -1,0 +1,4 @@
+# Normalize to LF in the index on every platform: `run.sh` compares program output byte for byte to
+# flag a mismatch between languages, so a CRLF checkout would report differences that are not real.
+* text=auto eol=lf
+*.md diff=markdown
