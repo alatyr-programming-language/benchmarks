@@ -16,7 +16,8 @@
 #   Bin    compiled binary size (`-` for interpreted)
 #   Src    source file size
 # In each metric row the **best** value is green and the **worst** red. A missing
-# toolchain shows `-` and is skipped. Correctness: the first language's output is
+# optional toolchain shows `-`; an Alatyr build or run failure aborts the run.
+# Correctness: the first language's output is
 # the reference (`!` flags a mismatch). Run from the dev shell (or let the script
 # re-exec under direnv). The Alatyr compiler is NOT built here — this repository does not contain it.
 # Point `ALATYR` at a built compiler, or put `alatyr` on PATH:
@@ -29,12 +30,22 @@ set -uo pipefail
 
 self="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
 cd "$(dirname "$self")"
-if [ -z "${BENCH_IN_SHELL:-}" ] && ! command -v cc >/dev/null 2>&1; then
-  if command -v direnv >/dev/null 2>&1; then export BENCH_IN_SHELL=1; exec direnv exec .. "$self" "$@"; fi
-  echo "note: no dev-shell toolchain on PATH and no direnv to load it; run from inside the dev shell." >&2
+need_shell=0
+for tool in cc rustc zig go node php ruby python3 as ld; do
+  command -v "$tool" >/dev/null 2>&1 || { need_shell=1; break; }
+done
+if [ -z "${BENCH_IN_SHELL:-}" ] && [ "$need_shell" = 1 ]; then
+  if command -v direnv >/dev/null 2>&1; then export BENCH_IN_SHELL=1; exec direnv exec . "$self" "$@"; fi
+  echo "note: comparison toolchain incomplete on PATH and no direnv to load it; run from inside the dev shell." >&2
 fi
 
 REPEAT="${REPEAT:-5}"
+case "$REPEAT" in
+  ''|0*|*[!0-9]*)
+    echo "run.sh: REPEAT must be a positive integer (got '$REPEAT')." >&2
+    exit 2
+    ;;
+esac
 work="$(mktemp -d)"; trap 'rm -rf "$work"' EXIT
 data="$work/data"; : >"$data"; notes="$work/notes"; : >"$notes"
 export GOCACHE="$work/go-cache" GOPATH="$work/go" GOFLAGS=-mod=mod
@@ -52,7 +63,7 @@ done
 # fallback ran `( cd .. && ./seed/alatyr build package.al ) || true`, which in a standalone checkout
 # fails SILENTLY — Alatyr then vanished from the comparison table with only a `note:` on stderr. A
 # benchmark suite that quietly drops the language it exists to measure is worse than one that refuses
-# to start, so a missing compiler is now a hard, named error.
+# to start, so a missing or failing Alatyr compiler/benchmark is now a hard, named error.
 alatyr_bin="${ALATYR:-}"
 if [ -z "$alatyr_bin" ]; then alatyr_bin="$(command -v alatyr 2>/dev/null || true)"; fi
 if [ -z "$alatyr_bin" ] || [ ! -x "$alatyr_bin" ]; then
@@ -78,18 +89,22 @@ prog()      { if [ -t 2 ]; then printf '\r\033[K%s' "$1" >&2; else printf '%s\n'
 prog_done() { [ -t 2 ] && printf '\r\033[K' >&2 || true; }
 rec() { printf '%s\t%s\t%s\t%s\t%s\n' "$1" "$2" "$3" "$4" "$5" >>"$data"; }
 
-# build LANG SRC OUT -> seconds (compiled, on success), "" (build failed/skip).
+# build LANG SRC OUT -> seconds (compiled, on success); failure returns 1.
 build_lang() {
   local lang="$1" src="$2" out="$3" s e
   s="$(date +%s.%N)"
   case "$lang" in
-    Alatyr) [ -x "$alatyr_bin" ] && "$alatyr_bin" -o "$out" "$src" >/dev/null 2>&1 || return 1;;
+    Alatyr)
+      [ -x "$alatyr_bin" ] || return 1
+      "$alatyr_bin" -o "$out" "$src" >/dev/null || return 1
+      ;;
     C)      command -v cc    >/dev/null 2>&1 && cc -O2 -o "$out" "$src" 2>/dev/null || return 1;;
     Rust)   command -v rustc >/dev/null 2>&1 && rustc -O -o "$out" "$src" 2>/dev/null || return 1;;
     Zig)    command -v zig   >/dev/null 2>&1 && zig build-exe -O ReleaseFast "$src" -femit-bin="$out" --cache-dir "$work/zig" 2>/dev/null || return 1;;
     Go)     command -v go    >/dev/null 2>&1 && go build -o "$out" "$src" 2>/dev/null || return 1;;
     *) return 1;;
   esac
+  [ -x "$out" ] || return 1
   e="$(date +%s.%N)"; awk -v a="$s" -v b="$e" 'BEGIN{printf"%.2f",b-a}'
 }
 
@@ -105,32 +120,66 @@ run_cmd() {
 }
 
 run_bench() {
-  local bench="$1" dir="$2" ref=""
+  local bench="$1" dir="$2" ref="" have_ref=0
   for lang in "${LANGS[@]}"; do
     local src="$dir/$bench.${EXT[$lang]}" out="$work/${bench}_${lang}"
     if [ ! -f "$src" ]; then for m in Time Build Mem Bin Src; do rec "$bench" "$lang" "$m" "-" -1; done; continue; fi
     prog "  benchmarking ${bench}: ${lang} …"
     local build="-" buildnum=-1 bin=-1
     if [ -n "${COMPILED[$lang]:-}" ]; then
-      local bt; bt="$(build_lang "$lang" "$src" "$out")" || { for m in Time Build Mem Bin Src; do rec "$bench" "$lang" "$m" "-" -1; done; continue; }
+      local bt
+      if ! bt="$(build_lang "$lang" "$src" "$out")"; then
+        if [ "$lang" = Alatyr ]; then
+          echo "run.sh: Alatyr failed to build $src — refusing to run." >&2
+          exit 2
+        fi
+        echo "note: $bench/$lang failed to build; column is '-'." >&2
+        for m in Time Build Mem Bin Src; do rec "$bench" "$lang" "$m" "-" -1; done
+        continue
+      fi
       build="${bt}s"; buildnum="$bt"; bin="$(wc -c <"$out")"
     fi
     local runcmd; runcmd="$(run_cmd "$lang" "$src" "$out")"
-    if [ -z "$runcmd" ]; then for m in Time Build Mem Bin Src; do rec "$bench" "$lang" "$m" "-" -1; done; continue; fi
-    local best="" rss=0 t m output
+    if [ -z "$runcmd" ]; then
+      echo "note: $bench/$lang toolchain is unavailable; column is '-'." >&2
+      for m in Time Build Mem Bin Src; do rec "$bench" "$lang" "$m" "-" -1; done
+      continue
+    fi
+    local best="" rss=0 t m output run_status run_failed=0 fail_reason=""
     for _ in $(seq "$REPEAT"); do
+      run_status=0
       if [ -n "$gtime" ]; then
-        local meas; meas="$("$gtime" -f '%e %M' $runcmd 2>"$work/t" >"$work/o"; cat "$work/t")"
+        local meas
+        "$gtime" -f '%e %M' -o "$work/t" $runcmd >"$work/o" 2>"$work/e" || run_status=$?
+        meas="$(<"$work/t")"
         t="${meas% *}"; m="${meas##* }"
       else
-        local s e; s="$(date +%s.%N)"; $runcmd >"$work/o"; e="$(date +%s.%N)"
+        local s e; s="$(date +%s.%N)"; $runcmd >"$work/o" 2>"$work/e" || run_status=$?; e="$(date +%s.%N)"
         t="$(awk -v a="$s" -v b="$e" 'BEGIN{printf"%.3f",b-a}')"; m=0
       fi
-      output="$(cat "$work/o")"; [ -z "$ref" ] && ref="$output"
+      if [ "$run_status" -ne 0 ]; then
+        run_failed=1; fail_reason="failed at runtime (exit $run_status)"; break
+      fi
+      output="$(cat "$work/o")"
+      if [ -z "$output" ]; then
+        run_failed=1; fail_reason="produced no stdout"; break
+      fi
+      [ "$have_ref" = 0 ] && { ref="$output"; have_ref=1; }
       [ "$output" = "$ref" ] || echo "  $bench/$lang: output differs from the reference" >>"$notes"
       { [ -z "$best" ] || awk -v x="$t" -v y="$best" 'BEGIN{exit !(x<y)}'; } && best="$t"
       [ "${m:-0}" -gt "$rss" ] 2>/dev/null && rss="$m"
     done
+    if [ "$run_failed" = 1 ]; then
+      if [ "$lang" = Alatyr ]; then
+        echo "run.sh: Alatyr benchmark $bench $fail_reason — refusing to report a partial table." >&2
+        [ -s "$work/e" ] && sed 's/^/  /' "$work/e" >&2
+        exit 2
+      fi
+      echo "note: $bench/$lang $fail_reason; column is '-'." >&2
+      [ -s "$work/e" ] && sed 's/^/  /' "$work/e" >&2
+      for m in Time Build Mem Bin Src; do rec "$bench" "$lang" "$m" "-" -1; done
+      continue
+    fi
     local membytes=-1; [ "$rss" -gt 0 ] 2>/dev/null && membytes="$((rss*1024))"
     rec "$bench" "$lang" Time  "${best}s" "$best"
     rec "$bench" "$lang" Build "$build"   "$buildnum"

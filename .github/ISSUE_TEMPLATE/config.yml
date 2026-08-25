@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: How this repository works
+    url: https://github.com/alatyr-programming-language/benchmarks/blob/main/CONTRIBUTING.md
+    about: What makes a comparison honest here, and why a missing compiler is an error rather than a skipped column.
+  - name: The compiler itself
+    url: https://github.com/alatyr-programming-language/compiler/issues
+    about: If Alatyr is slow, wrong or fails to build a benchmark, that belongs in the compiler's tracker with a minimal program.

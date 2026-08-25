@@ -15,3 +15,5 @@ __pycache__/
 # OS / editor noise
 .DS_Store
 Thumbs.db
+# direnv's per-checkout environment; `.envrc` is the reproducible source.
+.direnv/

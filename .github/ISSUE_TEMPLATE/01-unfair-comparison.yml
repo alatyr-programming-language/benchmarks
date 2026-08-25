@@ -1,0 +1,37 @@
+name: Unfair comparison
+description: A column measures something other than the language — unidiomatic code, wrong flags, or a different algorithm.
+title: "[fairness] "
+labels: ["fairness"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The most valuable reports here are the ones that make Alatyr look **worse**. A comparison
+        that flatters the host language is not a measurement, and this repository is easier to
+        discredit through one unfair column than through any number of slow ones.
+  - type: input
+    id: which
+    attributes:
+      label: Which benchmark and which language
+      placeholder: "02_primes, the Rust column"
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: What it actually measures
+      description: >
+        Say what a competent user of that language would write instead, and why the difference is
+        about the harness rather than about the language. Naming the mechanism — an allocation that
+        idiomatic code would not make, a flag its users always pass, work the optimiser can delete —
+        is what makes this actionable.
+    validations:
+      required: true
+  - type: textarea
+    id: numbers
+    attributes:
+      label: Numbers, if you have them
+      description: >
+        Before and after your proposed version, **and the machine they ran on**. A timing without
+        its machine is not a measurement, which is also why nothing here is a pass/fail check.
+      render: text

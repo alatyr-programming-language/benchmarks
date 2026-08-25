@@ -21,11 +21,20 @@ ALATYR="$OLDPWD/compiler/target/debug/alatyr" ./run.sh          # all benchmarks
 ALATYR=… ./run.sh 01_hello                                      # just one
 ```
 
-With no compiler the script **refuses and exits 2** rather than skipping Alatyr. That is deliberate:
-a comparison table missing the language it exists to measure still looks like a result.
+The other nine toolchains come from this repository's own `flake.nix`: `nix develop` (or `direnv
+allow`, then just `./run.sh` — the harness re-execs itself under the shell when any comparison
+toolchain or assembler/linker is absent).
+Each comparison language is optional to the harness, so without that shell the columns simply read
+`-`; the shell is what makes the table complete rather than what makes the script run. One column is
+worth naming: peak RSS is read from GNU `time -f '%e %M'`, so without it every `Mem` cell is `-` —
+the measurements that motivate a systems language are exactly the ones that vanish quietly.
 
-Other toolchains are optional — a missing one shows `-` in its column and is skipped. The Alatyr
-compiler is the one exception, for the reason above.
+With no compiler, or when Alatyr fails to build or run a benchmark, the script **refuses and exits
+2** rather than skipping Alatyr. That is deliberate: a comparison table missing the language it
+exists to measure still looks like a result.
+
+Other toolchains are optional — a missing or failing one shows `-` in its column with a diagnostic.
+The Alatyr compiler is the one exception, for the reason above.
 
 ## Layout
 
@@ -35,7 +44,7 @@ the benchmark:
 ```
 benchmarks/
   run.sh                 # the single runner (build + measure + table)
-  primes/
+  02_primes/
     primes.al            # Alatyr      (built: alatyr build, default profile)
     primes.c             # C           (built: cc -O2)
     primes.rs            # Rust        (built: rustc -O)
@@ -48,7 +57,7 @@ benchmarks/
     primes.py            # Python      (run: python3)
 ```
 
-To add a benchmark `foo`, create `foo/foo.{al,c,rs,zig,go,ts,js,php,rb,py}`
+To add a benchmark `foo`, create `NN_foo/foo.{al,c,rs,zig,go,ts,js,php,rb,py}`
 (same algorithm, each idiomatic) — the runner discovers it automatically. Any
 language whose file (or toolchain) is missing simply shows `-`.
 
@@ -65,12 +74,12 @@ columns tell you *where* a language spends — not just one aggregate number:
 
 With the compiler resolved (see *Running them* above), the script can be started from
 anywhere — it **re-execs itself under the project's `direnv` shell** if
-the toolchain (`cc` / `rustc` / `zig` / `go` and the Alatyr `as`/`ld`) is not
-already on PATH, so the compiled languages are not skipped:
+any comparison toolchain (`cc` / `rustc` / `zig` / `go` / `node` / `php` / `ruby` /
+`python3`, plus `as`/`ld`) is not already on PATH, so the compiled languages are not skipped:
 
 ```sh
 ./run.sh                 # every benchmark
-./run.sh primes          # just one
+./run.sh 02_primes       # just one
 REPEAT=10 ./run.sh       # best of 10 (default 5)
 NO_COLOR=1 ./run.sh      # no colour
 ```
@@ -109,8 +118,7 @@ is not repeated in every cell); then one column per language.
 In each metric row the **best (smallest) value is shown in green and the worst
 (largest) in red** on a terminal (disabled by `NO_COLOR` or when piped). A
 language whose output differs from the reference (the first language's) is listed
-under *mismatches*; a missing toolchain or source shows `-` and is skipped, not
-an error.
+under *mismatches*; a missing source or optional toolchain shows `-`, not an error.
 
 ## The benchmarks
 
@@ -119,9 +127,9 @@ an error.
 Write a single `Hello, world!` line and exit. There is essentially no compute,
 so **Time** is dominated by process startup: a few milliseconds for the scripted
 languages' interpreter launch, effectively zero for the compiled ones — and
-**Mem** shows each runtime's baseline footprint with nothing allocated. The
-freestanding Alatyr binary has no runtime to start: it goes straight to `_start`,
-so it posts the smallest binary and the lowest RSS.
+**Mem** shows each runtime's baseline footprint with nothing allocated. The default Alatyr artifact
+uses raw startup with no libc or managed runtime: it goes straight to
+`_start`, so it posts the smallest binary and the lowest RSS.
 
 ### `primes` — CPU
 
@@ -129,7 +137,8 @@ Count the primes below 1,000,000 by **trial division** — a tight,
 allocation-free integer loop (`n % j == 0`, `j*j <= n`). CPU-bound, so it
 isolates code-generation quality; it allocates nothing, so peak RSS reflects
 each runtime's static footprint. All variants print `primes = 78498`. The Alatyr
-version also exercises `std::fmt::print("{}")` (the Phase-C formatted output).
+version also exercises the current reference compiler's `{}` formatting path through
+`std::fmt::print`.
 
 ### `arraysum` — memory
 
@@ -138,20 +147,23 @@ answer is `49_999_995_000_000`). The live array dominates the peak resident set,
 so **Mem** exposes each runtime's **per-element footprint** — a flat 64-bit
 array (C / Rust / Zig / Go / Alatyr, ~80 MB) versus boxed integers or hashed
 arrays (Python / PHP, several times that) — and its allocator, where `primes`
-shows pure compute. The Alatyr version uses `std::vec` (an mmap-backed growable
-region, the Stdlib alloc tier) to hold and sum the array.
+shows pure compute. The Alatyr version uses `alloc::vec` over an arena from `std::os::arena`
+(an mmap-backed growable region in the current reference compiler) to hold and sum the array.
 
 ## Notes
 
-- Alatyr is compiled with its **default profile**; its optimizer is the §3.5
-  floor (no aggressive optimization yet, by design — transparent codegen, I1/I2),
-  yet it stays competitive on simple integer loops and — being **freestanding**
-  (no libc/runtime) — shows the smallest binary and lowest RSS of the compiled
+- Alatyr is compiled with the manifest-less default `debug` profile; §3.5 is the
+  specification's guaranteed minimum, while the implementation may optimize further.
+  The artifact uses raw startup with no libc or managed runtime, yet stays competitive
+  on simple integer loops and shows the smallest binary and lowest RSS of the compiled
   set, and the fastest **Build**.
 - Numbers are machine-dependent and for *relative* comparison in one run, not
   absolute claims. The limit balances the interpreted runtimes against the
   compiled languages' need for measurable work.
 - The Alatyr source carries **no manifest** — the default target is the build
   host (TOOL-3) — so its `Src` is a fair comparison; for the same reason all
-  sources are idiomatically formatted and **carry no comments** (a comment would
-  distort `Src`).
+  sources are idiomatically formatted and carry no explanatory comments.
+- The Alatyr sources target the current reference compiler surface:
+  `std::fmt`, `std::os::arena`, and `alloc::vec`. The specification's v1 standard-library
+  commitments are narrower, so this suite measures the shipped compiler API rather than
+  asserting that every path is a stable language-spec guarantee.
