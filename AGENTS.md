@@ -1,6 +1,6 @@
 # AGENTS.md — the Alatyr benchmarks
 
-Thirty programs — the same three algorithms written in ten languages — and `run.sh`, which builds,
+Sixty programs — the same six algorithms written in ten languages — and `run.sh`, which builds,
 times and compares them. No compiler lives here.
 
 ## What this repository is for, and what it is not for
