@@ -93,13 +93,9 @@ run := fn(in out ar : Arena) {
 }
 
 _start := fn() {
-  match std::os::arena(1024 * 1024) {
-    Result::Ok(mem) => {
-      mut ar := mem.region()
-      run(ar)
-      fm := std::os::free(mem)
-    }
-    Result::Err(e) => { panic("interp: cannot map the program arena") }
-  }
+  mem := std::os::arena(1024 * 1024).expect("interp: cannot map the program arena")
+  mut ar := mem.region()
+  run(ar)
+  fm := std::os::free(mem)
   exit(0)
 }

@@ -1,7 +1,10 @@
 fmt := std::fmt
 vec := alloc::vec
 
-sum_to := fn(in out ar : Arena, n : u64) -> u64 {
+_start := fn() {
+  n : u64 = 10000000
+  mut osar := std::os::arena(81000000).expect("arraysum: cannot map the arena")
+  mut ar := osar.region()
   mut sum : u64 = 0
   alloc::with(ar) {
     mut v := vec::with_capacity(u64, usize(n))
@@ -19,18 +22,7 @@ sum_to := fn(in out ar : Arena, n : u64) -> u64 {
     }
     f := v.free()
   }
-  sum
-}
-
-_start := fn() {
-  match std::os::arena(81000000) {
-    Result::Ok(osar) => {
-      mut ar := osar.region()
-      sum : u64 = sum_to(ar, 10000000)
-      fmt::print("sum = {}\n", sum)
-      fa := std::os::free(osar)
-    }
-    Result::Err(e) => { panic("arraysum: cannot map the arena") }
-  }
+  fa := std::os::free(osar)
+  fmt::print("sum = {}\n", sum)
   exit(0)
 }

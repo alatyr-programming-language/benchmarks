@@ -53,20 +53,12 @@ run := fn(in out long_ar : Arena, in out scratch : Arena, max_depth : u64) {
 }
 
 _start := fn() {
-  match std::os::arena(ARENA_BYTES) {
-    Result::Ok(long_mem) => {
-      match std::os::arena(ARENA_BYTES) {
-        Result::Ok(scratch_mem) => {
-          mut long_ar := long_mem.region()
-          mut scratch := scratch_mem.region()
-          run(long_ar, scratch, MAX_DEPTH)
-          fs := std::os::free(scratch_mem)
-        }
-        Result::Err(e) => { panic("bintrees: cannot map the scratch arena") }
-      }
-      fl := std::os::free(long_mem)
-    }
-    Result::Err(e) => { panic("bintrees: cannot map the long-lived arena") }
-  }
+  long_mem := std::os::arena(ARENA_BYTES).expect("bintrees: cannot map the long-lived arena")
+  scratch_mem := std::os::arena(ARENA_BYTES).expect("bintrees: cannot map the scratch arena")
+  mut long_ar := long_mem.region()
+  mut scratch := scratch_mem.region()
+  run(long_ar, scratch, MAX_DEPTH)
+  fs := std::os::free(scratch_mem)
+  fl := std::os::free(long_mem)
   exit(0)
 }
