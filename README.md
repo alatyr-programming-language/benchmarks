@@ -204,8 +204,9 @@ Every benchmark has all ten languages; none is missing.
   compiled languages' need for measurable work.
 - The Alatyr source carries **no manifest** — the default target is the build
   host (TOOL-3) — so its `Src` is a fair comparison; for the same reason all
-  sources are idiomatically formatted and carry no explanatory comments, except a one-line
-  pointer to the open compiler issue behind each remaining Alatyr workaround.
+  sources are idiomatically formatted and carry no explanatory comments, except two one-line
+  pointers in `06_blur/blur.al` to the open compiler issues (#1925, #445) its workarounds
+  stand in for; the other remaining workarounds (compiler#991, #993, #994) carry no comment.
 - The Alatyr sources target the current reference compiler surface:
   `std::fmt`, `std::os::arena`, `alloc::vec`, and the region mechanism (`Arena`, `Handle(T)`,
   `@alloc`, `get`, `close`). The specification's v1 standard-library
