@@ -3,7 +3,7 @@ vec := alloc::vec
 
 _start := fn() {
   n : u64 = 10000000
-  mut osar := std::os::arena(81000000)
+  mut osar := std::os::arena(81000000).expect("arraysum: cannot map the arena")
   mut ar := osar.region()
   mut sum : u64 = 0
   alloc::with(ar) {
